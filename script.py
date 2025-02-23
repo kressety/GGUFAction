@@ -1,6 +1,7 @@
 import os
 import subprocess
 import logging
+import requests
 from huggingface_hub import snapshot_download
 from modelscope.hub.api import HubApi
 from modelscope.hub.constants import Licenses, ModelVisibility
@@ -24,12 +25,71 @@ def check_model_files(directory):
     logger.info(f"Found weight files: {weight_files}")
     logger.info(f"Found config.json")
 
+def load_unsupported_models():
+    """Load list of unsupported models from file."""
+    unsupported_file = "unsupported_models.txt"
+    unsupported_models = set()
+    if os.path.exists(unsupported_file):
+        with open(unsupported_file, "r") as f:
+            unsupported_models = set(line.strip() for line in f if line.strip())
+    return unsupported_models
+
+def save_unsupported_model(repo_id):
+    """Append unsupported model to file."""
+    unsupported_file = "unsupported_models.txt"
+    with open(unsupported_file, "a") as f:
+        f.write(f"{repo_id}\n")
+
+def get_hf_model_card(repo_id, token):
+    """Fetch model card from Hugging Face."""
+    url = f"https://huggingface.co/api/models/{repo_id}"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("cardData", {}).get("readme", "No model card available on Hugging Face.")
+    except Exception as e:
+        logger.warning(f"Failed to fetch model card for {repo_id}: {str(e)}")
+        return "No model card available on Hugging Face."
+
+def create_readme(repo_id, hf_token):
+    """Generate README.md with model card and quantization info."""
+    model_card = get_hf_model_card(repo_id, hf_token)
+    readme_content = f"""{model_card}
+
+# {repo_id}-Q8_0-GGUF
+
+## Quantized Model Information
+This model has been quantized to Q8_0 format using `llama.cpp`. The quantization process reduces the model size and accelerates inference while maintaining reasonable accuracy.
+
+### Usage
+To use this model with `llama.cpp`:
+```bash
+./llama.cpp/build/bin/llama-cli -m model_q8.gguf [other options]
+```
+
+### Source
+- Original Model: [{repo_id}](https://huggingface.co/{repo_id})
+- Quantization Tool: [llama.cpp](https://github.com/ggerganov/llama.cpp)
+"""
+    with open("README.md", "w") as f:
+        f.write(readme_content)
+    return "README.md"
+
 def main():
     try:
-        # Step 1: Download model from Hugging Face
-        logger.info(f"Starting download from Hugging Face for repo: {os.environ['REPO_ID']}")
         repo_id = os.environ["REPO_ID"]
         hf_token = os.environ["HF_API_KEY"]
+
+        # Check unsupported models
+        unsupported_models = load_unsupported_models()
+        if repo_id in unsupported_models:
+            logger.error(f"Model {repo_id} is known to be unsupported for GGUF conversion. Terminating.")
+            exit(1)
+
+        # Step 1: Download model from Hugging Face
+        logger.info(f"Starting download from Hugging Face for repo: {repo_id}")
         local_dir = snapshot_download(repo_id=repo_id, token=hf_token)
         logger.info(f"Model downloaded successfully to: {local_dir}")
 
@@ -43,10 +103,15 @@ def main():
             "--outfile", "model.gguf"
         ]
         logger.debug(f"Running convert command: {' '.join(convert_cmd)}")
-        result = subprocess.run(convert_cmd, capture_output=True, text=True, check=True, shell=False)
-        logger.debug(f"Convert stdout: {result.stdout}")
-        logger.debug(f"Convert stderr: {result.stderr}")
-        logger.info("Model converted to GGUF: model.gguf")
+        try:
+            result = subprocess.run(convert_cmd, capture_output=True, text=True, check=True, shell=False)
+            logger.debug(f"Convert stdout: {result.stdout}")
+            logger.debug(f"Convert stderr: {result.stderr}")
+            logger.info("Model converted to GGUF: model.gguf")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Conversion failed for {repo_id}. Adding to unsupported list.")
+            save_unsupported_model(repo_id)
+            raise
 
         # Step 3: Quantize to Q8_0
         logger.info("Starting Q8_0 quantization with llama.cpp")
@@ -56,7 +121,7 @@ def main():
         logger.debug(f"Quantize stdout: {result.stdout}")
         logger.info("Model quantized to Q8_0: model_q8.gguf")
 
-        # Step 4: Upload to ModelScope using create_model and upload_file
+        # Step 4: Upload to ModelScope with README
         logger.info("Preparing to upload quantized model to ModelScope")
         ms_token = os.environ["MS_API_KEY"]
         ms_username = os.environ.get("MS_USERNAME")
@@ -77,8 +142,9 @@ def main():
             chinese_name=f"{model_name} Q8_0 GGUF 量化模型"
         )
 
+        # Upload quantized model file
         local_file = "model_q8.gguf"
-        repo_path = "model_q8.gguf"  # Path in ModelScope repo
+        repo_path = "model_q8.gguf"
         logger.info(f"Uploading file {local_file} to {model_id}")
         api.upload_file(
             path_or_fileobj=local_file,
@@ -86,7 +152,18 @@ def main():
             repo_id=model_id,
             commit_message="Upload Q8_0 quantized GGUF model from Hugging Face"
         )
-        logger.info(f"Quantized model uploaded successfully to: {model_id}")
+
+        # Generate and upload README.md
+        readme_file = create_readme(repo_id, hf_token)
+        logger.info(f"Uploading README.md to {model_id}")
+        api.upload_file(
+            path_or_fileobj=readme_file,
+            path_in_repo="README.md",
+            repo_id=model_id,
+            commit_message="Add README with model card and quantization info"
+        )
+
+        logger.info(f"Quantized model and README uploaded successfully to: {model_id}")
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Subprocess failed with return code {e.returncode}")
