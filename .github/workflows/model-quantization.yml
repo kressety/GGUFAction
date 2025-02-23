@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -18,16 +18,34 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.13'
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
     - name: Install Python dependencies
       run: |
-        pip install huggingface_hub modelscope torch sentencepiece --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install -r requirements.txt
+    - name: Cache llama.cpp build
+      uses: actions/cache@v4
+      with:
+        path: llama.cpp/build
+        key: ${{ runner.os }}-llama-cpp-${{ hashFiles('llama.cpp/CMakeLists.txt', 'llama.cpp/**/*.cpp', 'llama.cpp/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-llama-cpp-
     - name: Install C++ tools and build llama.cpp
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential git cmake
-        git clone https://github.com/ggerganov/llama.cpp.git
+        if [ ! -d "llama.cpp" ]; then
+          git clone https://github.com/ggerganov/llama.cpp.git
+        fi
         cd llama.cpp
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        if [ ! -d "build" ]; then
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+        fi
         cmake --build build --config Release -j$(nproc)
     - name: Run Python script
       env:
