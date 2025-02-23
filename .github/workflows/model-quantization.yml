@@ -1,0 +1,36 @@
+name: Model Quantization
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: 'Hugging Face repository ID (username/model_name)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+    - name: Install Python dependencies
+      run: |
+        pip install huggingface_hub modelscope torch sentencepiece
+    - name: Install C++ tools and clone llama.cpp
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git
+        git clone https://github.com/ggerganov/llama.cpp.git
+        cd llama.cpp
+        make
+    - name: Run Python script
+      env:
+        HF_API_KEY: ${{ secrets.HF_API_KEY }}
+        MS_API_KEY: ${{ secrets.MS_API_KEY }}
+        REPO_ID: ${{ inputs.repo_id }}
+      run: python script.py
