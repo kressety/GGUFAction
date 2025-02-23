@@ -34,7 +34,7 @@ def main():
         # Step 2: Convert to GGUF format
         logger.info("Converting model to GGUF format")
         convert_cmd = [
-            "python", "llama.cpp/convert-hf-to-gguf.py", local_dir,
+            "python", "llama.cpp/convert_hf_to_gguf.py", local_dir,
             "--outfile", "model.gguf"
         ]
         logger.debug(f"Running convert command: {' '.join(convert_cmd)}")
