@@ -20,7 +20,7 @@ jobs:
         python-version: '3.13'
     - name: Install Python dependencies
       run: |
-        pip install huggingface_hub modelscope torch --index-url https://download.pytorch.org/whl/cpu sentencepiece
+        pip install huggingface_hub modelscope torch sentencepiece --extra-index-url https://download.pytorch.org/whl/cpu
     - name: Install C++ tools and build llama.cpp
       run: |
         sudo apt-get update
