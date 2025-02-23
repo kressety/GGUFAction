@@ -1,0 +1,6 @@
+huggingface_hub
+modelscope
+torch
+sentencepiece
+numpy
+--extra-index-url https://download.pytorch.org/whl/cpu
