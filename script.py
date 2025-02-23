@@ -2,7 +2,7 @@ import os
 import subprocess
 import logging
 import requests
-from huggingface_hub import snapshot_download
+from huggingface_hub import snapshot_download, hf_hub_download
 from modelscope.hub.api import HubApi
 from modelscope.hub.constants import Licenses, ModelVisibility
 
@@ -41,26 +41,41 @@ def save_unsupported_model(repo_id):
         f.write(f"{repo_id}\n")
 
 def get_hf_model_card(repo_id, token):
-    """Fetch model card from Hugging Face."""
-    url = f"https://huggingface.co/api/models/{repo_id}"
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    """Fetch raw README.md from Hugging Face and extract content between ---."""
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("cardData", {}).get("readme", "No model card available on Hugging Face.")
+        # Download README.md from Hugging Face
+        readme_path = hf_hub_download(repo_id=repo_id, filename="README.md", token=token)
+        with open(readme_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Extract content between first --- and second ---
+        lines = content.splitlines()
+        start_idx = None
+        end_idx = None
+        for i, line in enumerate(lines):
+            if line.strip() == "---":
+                if start_idx is None:
+                    start_idx = i
+                elif end_idx is None:
+                    end_idx = i
+                    break
+        if start_idx is not None and end_idx is not None and start_idx < end_idx:
+            extracted_content = "\n".join(lines[start_idx:end_idx + 1])
+            return extracted_content
+        else:
+            logger.warning(f"No valid --- section found in README.md for {repo_id}")
+            return "---\nNo YAML metadata found in README.md\n---"
+
     except Exception as e:
-        logger.warning(f"Failed to fetch model card for {repo_id}: {str(e)}")
-        return "No model card available on Hugging Face."
+        logger.warning(f"Failed to fetch README.md for {repo_id}: {str(e)}")
+        return "---\nNo model card available on Hugging Face.\n---"
 
 def create_readme(repo_id, hf_token):
     """Generate README.md with model card and quantization info."""
     model_card = get_hf_model_card(repo_id, hf_token)
     readme_content = f"""{model_card}
 
-# {repo_id}-Q8_0-GGUF
-
-## Quantized Model Information
+## {repo_id}-Q8_0-GGUF
 This model has been quantized to Q8_0 format using `llama.cpp`. The quantization process reduces the model size and accelerates inference while maintaining reasonable accuracy.
 
 ### Usage
@@ -73,7 +88,7 @@ To use this model with `llama.cpp`:
 - Original Model: [{repo_id}](https://huggingface.co/{repo_id})
 - Quantization Tool: [llama.cpp](https://github.com/ggerganov/llama.cpp)
 """
-    with open("README.md", "w") as f:
+    with open("README.md", "w", encoding="utf-8") as f:
         f.write(readme_content)
     return "README.md"
 
