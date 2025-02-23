@@ -13,11 +13,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def check_model_files(directory):
-    """Check if model directory contains weight files."""
+    """Check if model directory contains required files."""
     weight_files = [f for f in os.listdir(directory) if f.endswith(('.bin', '.safetensors'))]
+    config_file = os.path.join(directory, "config.json")
     if not weight_files:
         raise FileNotFoundError(f"No weight files (.bin or .safetensors) found in {directory}")
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"config.json not found in {directory}")
     logger.info(f"Found weight files: {weight_files}")
+    logger.info(f"Found config.json")
 
 def main():
     try:
@@ -38,13 +42,14 @@ def main():
             "--outfile", "model.gguf"
         ]
         logger.debug(f"Running convert command: {' '.join(convert_cmd)}")
-        result = subprocess.run(convert_cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(convert_cmd, capture_output=True, text=True, check=True, shell=False)
         logger.debug(f"Convert stdout: {result.stdout}")
+        logger.debug(f"Convert stderr: {result.stderr}")
         logger.info("Model converted to GGUF: model.gguf")
 
         # Step 3: Quantize to Q8_0
         logger.info("Starting Q8_0 quantization with llama.cpp")
-        quantize_cmd = ["llama.cpp/build/bin/quantize", "model.gguf", "model_q8.gguf", "q8_0"]
+        quantize_cmd = ["llama.cpp/bin/llama-quantize", "model.gguf", "model_q8.gguf", "q8_0"]
         logger.debug(f"Running quantize command: {' '.join(quantize_cmd)}")
         result = subprocess.run(quantize_cmd, capture_output=True, text=True, check=True)
         logger.debug(f"Quantize stdout: {result.stdout}")
