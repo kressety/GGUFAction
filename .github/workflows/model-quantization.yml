@@ -51,5 +51,6 @@ jobs:
       env:
         HF_API_KEY: ${{ secrets.HF_API_KEY }}
         MS_API_KEY: ${{ secrets.MS_API_KEY }}
+        MS_USERNAME: ${{ secrets.MS_USERNAME }}
         REPO_ID: ${{ inputs.repo_id }}
       run: python script.py
