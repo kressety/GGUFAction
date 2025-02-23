@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: [self-hosted]
+    runs-on: [self-hosted]  # 使用自托管 Runner
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -32,6 +32,10 @@ jobs:
         key: ${{ runner.os }}-unsupported-models-${{ hashFiles('unsupported_models.txt') }}
         restore-keys: |
           ${{ runner.os }}-unsupported-models-
+    - name: Install build tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config
     - name: Install Python dependencies
       run: |
         pip install -r requirements.txt
