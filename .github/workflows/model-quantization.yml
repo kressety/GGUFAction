@@ -20,14 +20,15 @@ jobs:
         python-version: '3.13'
     - name: Install Python dependencies
       run: |
-        pip install huggingface_hub modelscope torch sentencepiece
-    - name: Install C++ tools and clone llama.cpp
+        pip install huggingface_hub modelscope torch --index-url https://download.pytorch.org/whl/cpu sentencepiece
+    - name: Install C++ tools and build llama.cpp
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git
+        sudo apt-get install -y build-essential git cmake
         git clone https://github.com/ggerganov/llama.cpp.git
         cd llama.cpp
-        make
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release -j$(nproc)
     - name: Run Python script
       env:
         HF_API_KEY: ${{ secrets.HF_API_KEY }}
