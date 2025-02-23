@@ -12,6 +12,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def check_model_files(directory):
+    """Check if model directory contains weight files."""
+    weight_files = [f for f in os.listdir(directory) if f.endswith(('.bin', '.safetensors'))]
+    if not weight_files:
+        raise FileNotFoundError(f"No weight files (.bin or .safetensors) found in {directory}")
+    logger.info(f"Found weight files: {weight_files}")
+
 def main():
     try:
         # Step 1: Download model from Hugging Face
@@ -21,9 +28,15 @@ def main():
         local_dir = snapshot_download(repo_id=repo_id, token=hf_token)
         logger.info(f"Model downloaded successfully to: {local_dir}")
 
+        # Check model files
+        check_model_files(local_dir)
+
         # Step 2: Convert to GGUF format
         logger.info("Converting model to GGUF format")
-        convert_cmd = ["python", "llama.cpp/convert.py", local_dir, "--outfile", "model.gguf", "--format", "gguf"]
+        convert_cmd = [
+            "python", "llama.cpp/convert-hf-to-gguf.py", local_dir,
+            "--outfile", "model.gguf"
+        ]
         logger.debug(f"Running convert command: {' '.join(convert_cmd)}")
         result = subprocess.run(convert_cmd, capture_output=True, text=True, check=True)
         logger.debug(f"Convert stdout: {result.stdout}")
@@ -42,14 +55,14 @@ def main():
         ms_token = os.environ["MS_API_KEY"]
         api = HubApi()
         logger.info("Logging into ModelScope Hub")
-        api.login(ms_token)  # Login with access token
+        api.login(ms_token)
         model_name = repo_id.split("/")[1]
-        model_id = f"{os.getenv('GITHUB_ACTOR', 'user')}/quantized_{model_name}"  # e.g., "user/quantized_modelname"
+        model_id = f"{os.getenv('GITHUB_ACTOR', 'user')}/quantized_{model_name}"
         logger.info(f"Pushing model to ModelScope with ID: {model_id}")
         api.push_model(
             model_id=model_id,
-            model_dir=os.path.dirname("model_q8.gguf"),  # Directory containing the model file
-            visibility=5,  # Public
+            model_dir=os.path.dirname("model_q8.gguf"),
+            visibility=5,
             license="Apache License 2.0",
             commit_message="Upload Q8_0 quantized model from Hugging Face",
             revision="master"
@@ -58,7 +71,12 @@ def main():
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Subprocess failed with return code {e.returncode}")
-        logger.error(f"Command output: {e.output}")
+        logger.error(f"Command: {' '.join(e.cmd)}")
+        logger.error(f"Stdout: {e.stdout}")
+        logger.error(f"Stderr: {e.stderr}")
+        raise
+    except FileNotFoundError as e:
+        logger.error(f"Model validation error: {str(e)}")
         raise
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}", exc_info=True)
