@@ -1,0 +1,54 @@
+name: Model Quantization Selfhosted
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: 'Hugging Face repository ID (username/model_name)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - name: Cache unsupported models
+      uses: actions/cache@v4
+      with:
+        path: unsupported_models.txt
+        key: ${{ runner.os }}-unsupported-models-${{ hashFiles('unsupported_models.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-unsupported-models-
+    - name: Install Python dependencies
+      run: |
+        pip install -r requirements.txt
+    - name: Install C++ tools and build llama.cpp
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git cmake
+        if [ ! -d "llama.cpp" ]; then
+          git clone https://github.com/ggerganov/llama.cpp.git
+        fi
+        cd llama.cpp
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release -j$(nproc)
+    - name: Run Python script
+      env:
+        HF_API_KEY: ${{ secrets.HF_API_KEY }}
+        MS_API_KEY: ${{ secrets.MS_API_KEY }}
+        MS_USERNAME: ${{ secrets.MS_USERNAME }}
+        REPO_ID: ${{ inputs.repo_id }}
+      run: python script.py
