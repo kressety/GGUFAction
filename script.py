@@ -49,7 +49,7 @@ def main():
 
         # Step 3: Quantize to Q8_0
         logger.info("Starting Q8_0 quantization with llama.cpp")
-        quantize_cmd = ["llama.cpp/bin/llama-quantize", "model.gguf", "model_q8.gguf", "q8_0"]
+        quantize_cmd = ["llama.cpp/build/bin/llama-quantize", "model.gguf", "model_q8.gguf", "q8_0"]
         logger.debug(f"Running quantize command: {' '.join(quantize_cmd)}")
         result = subprocess.run(quantize_cmd, capture_output=True, text=True, check=True)
         logger.debug(f"Quantize stdout: {result.stdout}")
