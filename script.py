@@ -3,6 +3,7 @@ import subprocess
 import logging
 from huggingface_hub import snapshot_download
 from modelscope.hub.api import HubApi
+from modelscope.hub.constants import Licenses, ModelVisibility
 
 # Configure logging
 logging.basicConfig(
@@ -55,24 +56,37 @@ def main():
         logger.debug(f"Quantize stdout: {result.stdout}")
         logger.info("Model quantized to Q8_0: model_q8.gguf")
 
-        # Step 4: Upload to ModelScope using HubApi
+        # Step 4: Upload to ModelScope using create_model and upload_file
         logger.info("Preparing to upload quantized model to ModelScope")
         ms_token = os.environ["MS_API_KEY"]
+        ms_username = os.environ.get("MS_USERNAME")
+        if not ms_username:
+            raise ValueError("MS_USERNAME environment variable is not set")
+        
         api = HubApi()
         logger.info("Logging into ModelScope Hub")
         api.login(ms_token)
+
         model_name = repo_id.split("/")[1]
-        model_id = f"{os.getenv('GITHUB_ACTOR', 'user')}/quantized_{model_name}"
-        logger.info(f"Pushing model to ModelScope with ID: {model_id}")
-        api.push_model(
+        model_id = f"{ms_username}/{model_name}-Q8_0-GGUF"
+        logger.info(f"Creating ModelScope model with ID: {model_id}")
+        api.create_model(
             model_id=model_id,
-            model_dir=os.path.dirname("model_q8.gguf"),
-            visibility=5,
-            license="Apache License 2.0",
-            commit_message="Upload Q8_0 quantized model from Hugging Face",
-            revision="master"
+            visibility=ModelVisibility.PUBLIC,
+            license=Licenses.APACHE_V2,
+            chinese_name=f"{model_name} Q8_0 GGUF 量化模型"
         )
-        logger.info(f"Quantized model uploaded successfully: {model_id}")
+
+        local_file = "model_q8.gguf"
+        repo_path = "model_q8.gguf"  # Path in ModelScope repo
+        logger.info(f"Uploading file {local_file} to {model_id}")
+        api.upload_file(
+            path_or_fileobj=local_file,
+            path_in_repo=repo_path,
+            repo_id=model_id,
+            commit_message="Upload Q8_0 quantized GGUF model from Hugging Face"
+        )
+        logger.info(f"Quantized model uploaded successfully to: {model_id}")
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Subprocess failed with return code {e.returncode}")
